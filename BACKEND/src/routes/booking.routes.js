@@ -8,24 +8,29 @@ const {
   autoCloseSessions
 } = require("../controllers/bookingController");
 
-const {
-  cancelBooking
-} = require("../controllers/cancellation.controller");
+const { cancelBooking } =
+  require("../controllers/cancellation.controller");
 
 const {
   protect,
   mentorOnly,
-  candidateOnly
+  candidateOnly,
+  adminOnly
 } = require("../middlewares/authMiddleware");
 
 /* =========================
    BOOKINGS
-   ========================= */
+========================= */
 
 // Candidate creates booking
-router.post("/", protect, candidateOnly, createBooking);
+router.post(
+  "/",
+  protect,
+  candidateOnly,
+  createBooking
+);
 
-// Mentor confirms / cancels booking
+// Mentor accepts / rejects booking
 router.patch(
   "/:bookingId/status",
   protect,
@@ -33,7 +38,7 @@ router.patch(
   updateBookingStatus
 );
 
-// Candidate or Mentor cancels
+// Cancel booking (mentor or candidate)
 router.patch(
   "/:bookingId/cancel",
   protect,
@@ -46,10 +51,10 @@ router.post(
   protect,
   joinSession
 );
-router.put(
-  "/:bookingId/cancel",
-  protect,
-  cancelBooking
-);
+
+/* =========================
+   ADMIN UTILITIES (Optional)
+========================= */
+
 
 module.exports = router;

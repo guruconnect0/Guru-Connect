@@ -11,9 +11,14 @@ const cron = require("node-cron");
 const { autoCloseSessions } = require("./src/controllers/bookingController");
 
 // Runs every 5 minutes
-cron.schedule("*/5 * * * *", async () => {
-  console.log("⏱ Auto-closing sessions...");
-  await autoCloseSessions();
+cron.schedule("* * * * *", async () => {
+  try {
+    console.log("⏱ Auto-closing sessions...");
+    await autoCloseSessions();
+    console.log("✅ Auto-close completed");
+  } catch (error) {
+    console.error("❌ Auto-close failed:", error.message);
+  }
 });
 
 // Start server

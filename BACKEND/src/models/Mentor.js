@@ -70,7 +70,31 @@ totalReviews: {
   type: Number,
   default: 0
 },
+walletBalance: {
+  type: Number,
+  default: 0
+},
 
+totalEarnings: {
+  type: Number,
+  default: 0
+},
+
+totalWithdrawn: {
+  type: Number,
+  default: 0
+},
+payoutRequests: [
+  {
+    amount: Number,
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending"
+    },
+    requestedAt: Date
+  }
+],
     location: {
       type: {
         type: String,

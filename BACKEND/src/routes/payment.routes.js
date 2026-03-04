@@ -2,24 +2,27 @@ const express = require("express");
 const router = express.Router();
 
 const {
-  createPayment
+  createOrder,
+  verifyPayment
 } = require("../controllers/payment.controller");
 
-const {
-  protect,
-  candidateOnly
-} = require("../middlewares/authMiddleware");
+const { protect, candidateOnly } =
+  require("../middlewares/authMiddleware");
 
-/* =========================
-   PAYMENTS
-   ========================= */
-
-// Candidate pays for paid session
+// Create Razorpay order
 router.post(
-  "/:bookingId/pay",
+  "/order/:bookingId",
   protect,
   candidateOnly,
-  createPayment
+  createOrder
+);
+
+// Verify payment
+router.post(
+  "/verify",
+  protect,
+  candidateOnly,
+  verifyPayment
 );
 
 module.exports = router;

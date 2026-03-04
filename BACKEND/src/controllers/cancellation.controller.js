@@ -1,22 +1,19 @@
 const Booking = require("../models/booking");
+const razorpay = require("../config/razorpay");
 
-/**
- * =========================
- * CANCEL BOOKING
- * =========================
- */
 exports.cancelBooking = async (req, res, next) => {
   try {
     const { bookingId } = req.params;
-
     const booking = await Booking.findById(bookingId);
 
-    if (!booking) {
-      return res.status(404).json({
+    if (!booking)
+      return res.status(404).json({ success: false });
+
+    if (booking.paymentStatus === "refunded")
+      return res.status(400).json({
         success: false,
-        message: "Booking not found"
+        message: "Already refunded"
       });
-    }
 
     const now = new Date();
     const sessionStart = new Date(
@@ -24,23 +21,27 @@ exports.cancelBooking = async (req, res, next) => {
     );
 
     const hoursLeft =
-      (sessionStart.getTime() - now.getTime()) / (1000 * 60 * 60);
+      (sessionStart - now) / (1000 * 60 * 60);
 
-    // Candidate cancelling
+    let refundAmount = 0;
+
     if (req.user.role === "candidate") {
-      if (booking.status === "completed") {
-        return res.status(400).json({
-          success: false,
-          message: "Cannot cancel completed session"
-        });
-      }
+      if (booking.sessionType === "paid" &&
+          booking.paymentStatus === "paid") {
 
-      // Refund logic
-      if (booking.sessionType === "paid") {
-        if (hoursLeft >= 24) {
+        if (hoursLeft >= 24)
+          refundAmount = booking.amount;
+        else if (hoursLeft >= 1)
+          refundAmount = booking.amount * 0.5;
+        else
+          refundAmount = 0;
+
+        if (refundAmount > 0 && booking.razorpayPaymentId) {
+          await razorpay.payments.refund(
+            booking.razorpayPaymentId,
+            { amount: Math.round(refundAmount * 100) }
+          );
           booking.paymentStatus = "refunded";
-        } else {
-          booking.paymentStatus = "paid"; // no refund
         }
       }
 
@@ -49,32 +50,36 @@ exports.cancelBooking = async (req, res, next) => {
 
       return res.json({
         success: true,
-        message: "Booking cancelled by candidate",
-        booking
+        refundAmount
       });
     }
 
-    // Mentor cancelling → always refund
     if (req.user.role === "mentor") {
-      booking.status = "cancelled";
-      if (booking.sessionType === "paid") {
+      if (booking.sessionType === "paid" &&
+          booking.paymentStatus === "paid") {
+
+        refundAmount = booking.amount;
+
+        await razorpay.payments.refund(
+          booking.razorpayPaymentId,
+          { amount: Math.round(refundAmount * 100) }
+        );
+
         booking.paymentStatus = "refunded";
       }
+
+      booking.status = "cancelled";
       await booking.save();
 
       return res.json({
         success: true,
-        message: "Booking cancelled by mentor",
-        booking
+        refundAmount
       });
     }
 
-    res.status(403).json({
-      success: false,
-      message: "Unauthorized"
-    });
+    res.status(403).json({ success: false });
 
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };

@@ -1,153 +1,60 @@
 const Booking = require("../models/booking");
 const Mentor = require("../models/Mentor");
+const Transaction = require("../models/Transaction");
+const razorpay = require("../config/razorpay");
 
-/**
- * =========================
- * CREATE BOOKING (CANDIDATE)
- * =========================
- */
-exports.createBooking = async (req, res, next) => {
+/* =========================
+   CREATE BOOKING
+========================= */
+exports.createBooking = async (req, res) => {
   try {
     const { mentorId, date, time, duration, sessionType = "demo" } = req.body;
     const candidateId = req.user._id;
 
-    /* 1️⃣ Mentor must exist & be verified */
     const mentor = await Mentor.findById(mentorId);
-    if (!mentor || !mentor.verified) {
-      return res.status(400).json({
-        success: false,
-        message: "Mentor not available for booking"
-      });
-    }
+    if (!mentor || !mentor.verified)
+      return res.status(400).json({ success: false, message: "Mentor unavailable" });
 
-    /* 2️⃣ Validate future date */
-    const sessionStart = new Date(`${date}T${time}`);
-    if (sessionStart < new Date()) {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot book past time"
-      });
-    }
-
-    const sessionEnd = new Date(sessionStart.getTime() + duration * 60000);
-const day = sessionStart
-  .toLocaleString("en-US", { weekday: "long" })
-  .toLowerCase();
-    /* 3️⃣ DEMO RULES */
-    if (sessionType === "demo") {
-      if (duration > 15) {
-        return res.status(400).json({
-          success: false,
-          message: "Demo session cannot exceed 15 minutes"
-        });
-      }
-
-      const existingDemo = await Booking.findOne({
-        mentorId,
-        candidateId,
-        sessionType: "demo",
-        status: { $ne: "cancelled" }
-      });
-
-      if (existingDemo) {
-        return res.status(403).json({
-          success: false,
-          message: "You already took a demo with this mentor"
-        });
-      }
-    }
-
-    /* 4️⃣ PAID SESSION RULE */
+    // 🚨 DEMO REQUIRED BEFORE PAID
     if (sessionType === "paid") {
-      const completedDemo = await Booking.findOne({
+      const demoCompleted = await Booking.findOne({
         mentorId,
         candidateId,
         sessionType: "demo",
         status: "completed"
       });
 
-      if (!completedDemo) {
-        return res.status(403).json({
+      if (!demoCompleted)
+        return res.status(400).json({
           success: false,
-          message: "You must complete a demo before booking a paid session"
+          message: "Complete demo session first"
         });
-      }
     }
 
-    /* 5️⃣ Mentor availability check */
- const available = mentor.availability.some(slot =>
-  slot.day.toLowerCase() === day &&
-  time >= slot.startTime &&
-  formatTime(sessionEnd) <= slot.endTime
-);
-
-    if (!available) {
-      return res.status(400).json({
-        success: false,
-        message: "Mentor not available in this time slot"
-      });
-    }
-
-    /* 6️⃣ Prevent mentor overlapping bookings */
-    const mentorConflict = await Booking.findOne({
+    // 🚫 Prevent double booking
+    const existingBooking = await Booking.findOne({
       mentorId,
       date,
-      status: { $in: ["pending", "confirmed", "in-progress"] }
+      time,
+      status: { $in: ["pending", "confirmed", "awaiting-payment", "in-progress"] }
     });
 
-    if (mentorConflict) {
-      const existingStart = new Date(
-        `${mentorConflict.date.toISOString().split("T")[0]}T${mentorConflict.time}`
-      );
-      const existingEnd = new Date(
-        existingStart.getTime() + mentorConflict.duration * 60000
-      );
-
-      if (sessionStart < existingEnd && sessionEnd > existingStart) {
-        return res.status(409).json({
-          success: false,
-          message: "This slot is already booked"
-        });
-      }
-    }
-
-    /* 7️⃣ Prevent candidate overlapping bookings */
-    const candidateConflict = await Booking.findOne({
-      candidateId,
-      date,
-      status: { $in: ["pending", "confirmed", "in-progress"] }
-    });
-
-    if (candidateConflict) {
-      const existingStart = new Date(
-        `${candidateConflict.date.toISOString().split("T")[0]}T${candidateConflict.time}`
-      );
-      const existingEnd = new Date(
-        existingStart.getTime() + candidateConflict.duration * 60000
-      );
-
-      if (sessionStart < existingEnd && sessionEnd > existingStart) {
-        return res.status(409).json({
-          success: false,
-          message: "You already have another session at this time"
-        });
-      }
-    }
-
-    /* 8️⃣ Limit pending bookings */
-    const pendingCount = await Booking.countDocuments({
-      candidateId,
-      status: "pending"
-    });
-
-    if (pendingCount >= 3) {
-      return res.status(403).json({
+    if (existingBooking)
+      return res.status(400).json({
         success: false,
-        message: "Complete existing bookings before creating new ones"
+        message: "Slot already booked"
       });
+
+    let amount = 0;
+    let commissionAmount = 0;
+    let mentorEarning = 0;
+
+    if (sessionType === "paid") {
+      amount = mentor.hourlyRate * (duration / 60);
+      commissionAmount = amount * 0.2;
+      mentorEarning = amount - commissionAmount;
     }
 
-    /* 9️⃣ Create booking */
     const booking = await Booking.create({
       mentorId,
       candidateId,
@@ -155,287 +62,138 @@ const day = sessionStart
       time,
       duration,
       sessionType,
-      paymentStatus: sessionType === "paid" ? "pending" : "not-required"
+      amount,
+      commissionAmount,
+      mentorEarning,
+      status: "pending",
+      paymentStatus: sessionType === "paid" ? "unpaid" : "not-required",
+      expiresAt:
+        sessionType === "paid"
+          ? new Date(Date.now() + 10 * 60 * 1000)
+          : null
     });
 
-    res.status(201).json({
-      success: true,
-      booking
-    });
-  } catch (error) {
-    next(error);
+    res.status(201).json({ success: true, booking });
+  } catch (err) {
+    res.status(500).json({ success: false });
   }
 };
 
-/**
- * =========================
- * UPDATE BOOKING STATUS
- * =========================
- */
-exports.updateBookingStatus = async (req, res, next) => {
-  try {
-    const { bookingId } = req.params;
-    const { status } = req.body;
+/* =========================
+   MENTOR ACCEPT / REJECT
+========================= */
+exports.updateBookingStatus = async (req, res) => {
+  const { bookingId } = req.params;
+  const { action } = req.body;
 
-    const booking = await Booking.findById(bookingId).populate("mentorId");
+  const booking = await Booking.findById(bookingId).populate("mentorId");
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found"
-      });
-    }
+  if (!booking)
+    return res.status(404).json({ success: false });
 
-    if (booking.mentorId.userId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Unauthorized"
-      });
-    }
+  if (booking.mentorId.userId.toString() !== req.user._id.toString())
+    return res.status(403).json({ success: false });
 
-    booking.status = status;
-    await booking.save();
-
-    res.json({ success: true, booking });
-  } catch (error) {
-    next(error);
+  if (action === "accept") {
+    booking.status =
+      booking.sessionType === "paid"
+        ? "awaiting-payment"
+        : "confirmed";
   }
+
+  if (action === "reject") {
+    booking.status = "cancelled";
+  }
+
+  await booking.save();
+  res.json({ success: true, booking });
 };
 
-/**
- * =========================
- * JOIN SESSION
- * =========================
- */
-exports.joinSession = async (req, res, next) => {
-  try {
-    const booking = await Booking.findById(req.params.bookingId);
+/* =========================
+   JOIN SESSION
+========================= */
+exports.joinSession = async (req, res) => {
+  const booking = await Booking.findById(req.params.bookingId);
 
-    if (
-      !booking ||
-      !["confirmed", "in-progress"].includes(booking.status)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid or unconfirmed session"
-      });
-    }
+  if (!booking || booking.status !== "confirmed")
+    return res.status(400).json({ success: false });
 
-    const sessionStart = new Date(
-      `${booking.date.toISOString().split("T")[0]}T${booking.time}`
-    );
-    const sessionEnd = new Date(
-      sessionStart.getTime() + booking.duration * 60000
-    );
-    const now = new Date();
+  const now = new Date();
+  booking.attendance = booking.attendance || {};
 
-    if (
-      now < new Date(sessionStart.getTime() - 10 * 60000) ||
-      now > new Date(sessionEnd.getTime() + 10 * 60000)
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "You can only join near the session time"
-      });
-    }
+  if (req.user.role === "mentor")
+    booking.attendance.mentorJoinedAt = now;
+  else
+    booking.attendance.candidateJoinedAt = now;
 
-    if (req.user.role === "mentor") {
-      if (booking.attendance.mentorJoinedAt) {
-        return res.status(400).json({ success: false, message: "Mentor already joined" });
-      }
-      booking.attendance.mentorJoinedAt = now;
-    } else {
-      if (booking.attendance.candidateJoinedAt) {
-        return res.status(400).json({ success: false, message: "Candidate already joined" });
-      }
-      booking.attendance.candidateJoinedAt = now;
-    }
+  booking.status = "in-progress";
+  await booking.save();
 
-    booking.status = "in-progress";
-    await booking.save();
-
-    res.json({
-      success: true,
-      message: "Joined session successfully"
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-exports.cancelBooking = async (req, res, next) => {
-  try {
-    const { bookingId } = req.params;
-
-    const booking = await Booking.findById(bookingId).populate("mentorId");
-
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found"
-      });
-    }
-
-    if (booking.status === "completed" || booking.status === "cancelled") {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot cancel this booking"
-      });
-    }
-
-    const sessionStart = new Date(
-      `${booking.date.toISOString().split("T")[0]}T${booking.time}`
-    );
-
-    const hoursBeforeSession =
-      (sessionStart - new Date()) / (1000 * 60 * 60);
-
-    let refundPercentage = 0;
-
-    // 🔥 MENTOR CANCELS → FULL REFUND
-    if (req.user.role === "mentor") {
-      refundPercentage = 100;
-      booking.cancelledBy = "mentor";
-    }
-
-    // 🔥 CANDIDATE CANCELS
-    if (req.user.role === "candidate") {
-      booking.cancelledBy = "candidate";
-
-      if (hoursBeforeSession >= 24) {
-        refundPercentage = 100;
-      } else if (hoursBeforeSession >= 1) {
-        refundPercentage = 50;
-      } else {
-        refundPercentage = 0;
-      }
-    }
-
-    // 💰 Calculate refund
-const amount = booking.amount || 0;
-const refundAmount = (amount * refundPercentage) / 100;
-
-booking.status = "cancelled";
-booking.refundAmount = refundAmount;
-
-if (refundPercentage > 0) {
-  booking.paymentStatus = "refunded";
-}
-
-
-    await booking.save();
-
-    res.json({
-      success: true,
-      refundPercentage,
-      refundAmount,
-      message:
-        refundPercentage > 0
-          ? `Refund of ${refundPercentage}% initiated`
-          : "No refund as per cancellation policy"
-    });
-
-  } catch (error) {
-    next(error);
-  }
+  res.json({ success: true });
 };
 
-
-/**
- * =========================
- * AUTO-CLOSE SESSIONS (CRON)
- * =========================
- */
+/* =========================
+   AUTO CLOSE + EXPIRY
+========================= */
 exports.autoCloseSessions = async () => {
   const now = new Date();
 
-  const bookings = await Booking.find({
-    status: "in-progress"
+  // Expire unpaid bookings
+  const expired = await Booking.find({
+    status: "awaiting-payment",
+    paymentStatus: "unpaid",
+    expiresAt: { $lte: now }
   });
 
-  for (const booking of bookings) {
+  for (const booking of expired) {
+    booking.status = "cancelled";
+    await booking.save();
+  }
 
+  // Close completed sessions
+  const sessions = await Booking.find({
+    status: "in-progress"
+  }).populate("mentorId");
+
+  for (const booking of sessions) {
     const start = new Date(
       `${booking.date.toISOString().split("T")[0]}T${booking.time}`
     );
-
     const end = new Date(start.getTime() + booking.duration * 60000);
 
     if (now > end) {
-
       const mentorJoined = booking.attendance?.mentorJoinedAt;
       const candidateJoined = booking.attendance?.candidateJoinedAt;
 
-      /* =========================
-         BOTH JOINED → SUCCESS
-      ========================= */
       if (mentorJoined && candidateJoined) {
-
         booking.status = "completed";
 
-        if (booking.sessionType === "paid") {
-          booking.paymentStatus = "paid";
-        } else {
-          booking.paymentStatus = "not-required";
+        if (
+          booking.sessionType === "paid" &&
+          booking.paymentStatus === "paid" &&
+          !booking.walletCredited
+        ) {
+          const mentor = booking.mentorId;
+
+          mentor.walletBalance += booking.mentorEarning;
+          mentor.totalEarnings += booking.mentorEarning;
+
+          await mentor.save();
+
+          await Transaction.create({
+            mentorId: mentor._id,
+            bookingId: booking._id,
+            type: "credit",
+            amount: booking.mentorEarning
+          });
+
+          booking.walletCredited = true;
         }
-      }
-
-      /* =========================
-         MENTOR NO-SHOW
-         → FULL REFUND
-      ========================= */
-      else if (!mentorJoined && candidateJoined) {
-
+      } else {
         booking.status = "cancelled";
-
-        if (booking.sessionType === "paid") {
-          booking.paymentStatus = "refunded";
-booking.refundAmount = booking.amount;
-        }
-      }
-
-      /* =========================
-         CANDIDATE NO-SHOW
-         → NO REFUND
-      ========================= */
-      else if (mentorJoined && !candidateJoined) {
-
-        booking.status = "cancelled";
-
-        if (booking.sessionType === "paid") {
-          booking.paymentStatus = "paid"; // mentor keeps payment
-          booking.refundAmount = 0;
-        }
-      }
-
-      /* =========================
-         BOTH DID NOT JOIN
-         → NO REFUND
-      ========================= */
-      else {
-
-        booking.status = "cancelled";
-
-        if (booking.sessionType === "paid") {
-          booking.paymentStatus = "paid";
-          booking.refundAmount = 0;
-        }
       }
 
       await booking.save();
     }
   }
-};
-
-/* =========================
-   HELPER
-   ========================= */
-function formatTime(date) {
-  return date.toTimeString().slice(0, 5);
-}
-
-module.exports = {
-  createBooking: exports.createBooking,
-  updateBookingStatus: exports.updateBookingStatus,
-  joinSession: exports.joinSession,
-  autoCloseSessions: exports.autoCloseSessions
 };

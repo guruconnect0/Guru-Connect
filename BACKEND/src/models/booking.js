@@ -64,9 +64,27 @@ cancellationReason: String,
 cancelledBy: {
   type: String,
   enum: ["candidate", "mentor"]
+},
+razorpayOrderId: String,
+razorpayPaymentId: String,
+razorpaySignature: String,
+
+commissionAmount: {
+  type: Number,
+  default: 0
+},
+walletCredited: {
+  type: Boolean,
+  default: false
+},
+
+mentorEarning: {
+  type: Number,
+  default: 0
 }
 
   },
+  
   { timestamps: true }
 );
 
