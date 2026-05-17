@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear GuruConnect Cookies</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+            color: #fafafa;
+        }
+        .container {
+            text-align: center;
+            padding: 3rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            max-width: 500px;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: #00d4ff;
+        }
+        p {
+            margin-bottom: 2rem;
+            color: #a0a0a0;
+            line-height: 1.6;
+        }
+        button {
+            background: #00d4ff;
+            color: #0a0a0a;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 1rem;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        .success {
+            color: #10b981;
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+        .info {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            padding: 1rem;
+            border-radius: 1rem;
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍪 Clear GuruConnect Cookies</h1>
+        <p>Click the button below to clear all old cookies and fix the 431 error.</p>
+        <button onclick="clearCookies()">Clear All Cookies</button>
+        <div id="result"></div>
+        <div class="info">
+            <strong>Why is this needed?</strong><br>
+            Old chat cookies were too large and caused "431 Request Header Fields Too Large" errors. We've switched to sessionStorage, but old cookies need to be cleared.
+        </div>
+    </div>
+
+    <script>
+        function clearCookies() {
+            // Get all cookies
+            const cookies = document.cookie.split(";");
+            let clearedCount = 0;
+
+            // Delete each cookie
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                const eqPos = cookie.indexOf("=");
+                const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                
+                // Delete the cookie
+                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                clearedCount++;
+            }
+
+            // Show success message
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<p class="success">✅ Cleared ${clearedCount} cookie(s)!<br><br>You can now close this page and restart the dev server.</p>`;
+        }
+    </script>
+</body>
+</html>

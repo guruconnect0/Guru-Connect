@@ -1,0 +1,98 @@
+const mongoose = require("mongoose");
+
+const bookingSchema = new mongoose.Schema(
+  {
+    candidateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Candidate",
+      required: true
+    },
+
+    mentorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Mentor",
+      required: true
+    },
+
+    sessionType: {
+      type: String,
+      enum: ["demo", "paid"],
+      default: "demo"
+    },
+
+    date: {
+      type: Date,
+      required: true
+    },
+
+    time: {
+      type: String, // HH:mm (24h)
+      required: true
+    },
+
+    duration: {
+      type: Number,
+      required: true
+    },
+
+    amount: {
+      type: Number,
+      default: 0
+    },
+
+    status: {
+      type: String,
+      enum: ["pending", "awaiting-payment", "confirmed", "in-progress", "completed", "cancelled"],
+      default: "pending"
+    },
+
+    paymentStatus: {
+      type: String,
+      enum: ["not-required", "unpaid", "pending", "paid", "refunded"],
+      default: "not-required"
+    },
+
+    expiresAt: {
+      type: Date,
+      default: null
+    },
+
+    attendance: {
+      mentorJoinedAt: Date,
+      candidateJoinedAt: Date
+    },
+    refundAmount: {
+      type: Number,
+      default: 0
+    },
+    cancellationReason: String,
+    cancelledBy: {
+      type: String,
+      enum: ["candidate", "mentor"]
+    },
+    meetingLink: String,
+
+    razorpayOrderId: String,
+    razorpayPaymentId: String,
+    razorpaySignature: String,
+
+    commissionAmount: {
+      type: Number,
+      default: 0
+    },
+    walletCredited: {
+      type: Boolean,
+      default: false
+    },
+
+    mentorEarning: {
+      type: Number,
+      default: 0
+    }
+
+  },
+
+  { timestamps: true }
+);
+
+module.exports = mongoose.model("Booking", bookingSchema);
